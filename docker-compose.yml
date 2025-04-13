@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: url_shortener
+    ports:
+        - "5431:5432"
+    networks:
+        - app-net
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+        - "6379:6379"
+    networks:
+        - app-net
+  eureka-server:
+    build:
+      context: ./service_discovery
+    ports:
+      - "8761:8761"
+    networks:
+      - app-net
+
+  api-gateway:
+    build:
+      context: ./api_gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+    networks:
+      - app-net
+
+  counter-service:
+    container_name: counter_service
+    build:
+      context: ./counter
+    ports:
+      - "8085:8085"
+    depends_on:
+      - eureka-server
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+    networks:
+      - app-net
+  shortener_service:
+    build:
+      context: ./shortner
+    deploy:
+      replicas: 50
+    depends_on:
+      - eureka-server
+      - counter-service
+      - postgres
+      - redis
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SERVER_PORT=0
+      - DB_URL=jdbc:postgresql://postgres:5432/url_shortener
+
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
