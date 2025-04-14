@@ -12,17 +12,16 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafkaStreams;
 import org.url_shortener_mp.analytics_service.dtos.URLClickEventDTO;
 import org.url_shortener_mp.analytics_service.dtos.WindowedAnalytic;
-import org.url_shortener_mp.analytics_service.services.InfluxServices;
+import org.url_shortener_mp.analytics_service.services.LogService;
 
 import java.time.Duration;
-import java.time.Instant;
 
 @Configuration
 @EnableKafkaStreams
 public class KafkaStreamsConfig {
 
     @Bean
-    public KStream<String,URLClickEventDTO> kStream(StreamsBuilder builder, InfluxServices influxServices) {
+    public KStream<String,URLClickEventDTO> kStream(StreamsBuilder builder, LogService logService) {
         KStream<String, URLClickEventDTO> kStream = builder.stream("url-click-event", Consumed.with(Serdes.String(),new URLClickEventSerde()));
       KTable<Windowed<String>, WindowedAnalytic> clickCounts = kStream.groupByKey().
                 windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofSeconds(10)))
@@ -39,7 +38,7 @@ public class KafkaStreamsConfig {
 
                             }
 if(event.getAgent()!=null){
-    aggregate.getUserAgentCounts().put(event.getAgent(),aggregate.getUserAgentCounts().getOrDefault(event.getAgent(),0L)+1);
+    aggregate.getUserAgentCounts().put(event.getAgent().replace(".","_"),aggregate.getUserAgentCounts().getOrDefault(event.getAgent(),0L)+1);
 
 }
 
@@ -81,7 +80,7 @@ return objectMapper.writeValueAsBytes(windowedAnalytic);
        clickCounts.toStream().foreach((k,c)->{
            String key = k.key();
            System.out.println(c);
-            influxServices.writeLog(c);
+            logService.writeLog(c);
 
 
        });

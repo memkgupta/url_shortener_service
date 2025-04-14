@@ -1,5 +1,7 @@
 package org.url_shortener_mp.analytics_service.dtos;
 
+import lombok.Data;
+
 import java.sql.Timestamp;
 import java.util.Map;
 
@@ -8,6 +10,15 @@ public class RangeAnalyticData {
     private Timestamp endTime;
     private double clicks;
     private Map<String,Long> agentMap;
+    private Map<String,Long> referrerMap;
+
+    public Map<String, Long> getReferrerMap() {
+        return referrerMap;
+    }
+
+    public void setReferrerMap(Map<String, Long> referrerMap) {
+        this.referrerMap = referrerMap;
+    }
 
     public Timestamp getStartTime() {
         return startTime;
