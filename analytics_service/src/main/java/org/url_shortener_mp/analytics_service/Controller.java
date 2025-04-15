@@ -1,7 +1,9 @@
 package org.url_shortener_mp.analytics_service;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.url_shortener_mp.analytics_service.dtos.DailyClicks;
+import org.url_shortener_mp.analytics_service.dtos.DashboardPayload;
 import org.url_shortener_mp.analytics_service.dtos.RangeAnalyticData;
 import org.url_shortener_mp.analytics_service.services.LogService;
 
@@ -26,5 +28,9 @@ public class Controller {
 
        return logService.getAnalytics(allParams);
     }
+    @GetMapping("/dashboard/{id}")
+    public ResponseEntity<DashboardPayload> getDashboard(@PathVariable String id) {
 
+        return ResponseEntity.ok( logService.getDashboard(id));
+    }
 }

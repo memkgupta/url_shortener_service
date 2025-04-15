@@ -1,10 +1,18 @@
 package org.url_shortener_mp.analytics_service.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.client.AggregateIterable;
+import com.mongodb.client.model.Accumulators;
+import com.mongodb.client.model.Aggregates;
 import lombok.RequiredArgsConstructor;
+import org.bson.Document;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoOperations;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.ArithmeticOperators;
+import org.springframework.data.mongodb.core.aggregation.VariableOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
 import org.url_shortener_mp.analytics_service.dtos.DailyClicks;
@@ -20,15 +28,13 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class LogService {
     private final EntryRepository entryRepository;
     private final MongoTemplate mongoTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     public LogService(EntryRepository entryRepository,MongoTemplate mongoTemplate) {
         this.entryRepository = entryRepository;
         this.mongoTemplate = mongoTemplate;
@@ -94,13 +100,50 @@ if(params.get("end_time") != null){
 }
     public DashboardPayload getDashboard(String urlId){
         try{
-                Aggregation aggregation = Aggregation.newAggregation(
-                        Aggregation.match(
-                                Criteria.where("url").is(urlId)
-                        )
 
-                );
-                return new DashboardPayload();
+
+
+            List<Document> pipeline = Arrays.asList(
+                    Document.parse("{ \"$match\": { \"url\": \"" + urlId + "\" } }"),
+
+                    Document.parse("{ \"$group\": { " +
+                            "\"_id\": null, " +
+                            "\"totalClicks\": { \"$sum\": \"$clicks\" }, " +
+                            "\"allAgents\": { \"$push\": \"$agentMap\" } } }"),
+
+                    Document.parse("{ \"$project\": { " +
+                            "\"totalClicks\": 1, " +
+                            "\"agentMap\": { \"$reduce\": { " +
+                            "  \"input\": \"$allAgents\", " +
+                            "  \"initialValue\": {}, " +
+                            "  \"in\": { \"$let\": { " +
+                            "    \"vars\": { " +
+                            "      \"current\": { \"$objectToArray\": \"$$this\" }, " +
+                            "      \"previous\": { \"$objectToArray\": \"$$value\" } " +
+                            "    }, " +
+                            "    \"in\": { \"$arrayToObject\": { \"$map\": { " +
+                            "      \"input\": { \"$concatArrays\": [ \"$$previous\", \"$$current\" ] }, " +
+                            "      \"as\": \"item\", " +
+                            "      \"in\": { " +
+                            "        \"k\": \"$$item.k\", " +
+                            "        \"v\": { \"$add\": [ " +
+                            "          { \"$ifNull\": [ { \"$getField\": { \"field\": \"$$item.k\", \"input\": \"$$value\" } }, 0 ] }, " +
+                            "          \"$$item.v\" " +
+                            "        ] } " +
+                            "      } " +
+                            "    } } } " +
+                            "  } } } " +
+                            "} } }")
+            );
+
+            AggregateIterable<Document> result = mongoTemplate.getDb()
+                    .getCollection("entry")  // replace with your collection name
+                    .aggregate(pipeline);
+            DashboardPayload dashboardPayload = null;
+            for (Document doc : result) {
+                dashboardPayload = objectMapper.convertValue(doc, DashboardPayload.class);
+            }
+                return dashboardPayload!=null?dashboardPayload:new DashboardPayload();
         }
         catch(Exception e){
             e.printStackTrace();

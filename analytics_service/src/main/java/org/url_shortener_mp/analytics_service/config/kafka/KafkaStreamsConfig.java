@@ -21,7 +21,7 @@ import java.time.Duration;
 public class KafkaStreamsConfig {
 
     @Bean
-    public KStream<String,URLClickEventDTO> kStream(StreamsBuilder builder, LogService logService) {
+    public KStream<String,URLClickEventDTO> kStream(StreamsBuilder builder, LogService logService,KafkaProducer producer) {
         KStream<String, URLClickEventDTO> kStream = builder.stream("url-click-event", Consumed.with(Serdes.String(),new URLClickEventSerde()));
       KTable<Windowed<String>, WindowedAnalytic> clickCounts = kStream.groupByKey().
                 windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofSeconds(10)))
@@ -80,6 +80,7 @@ return objectMapper.writeValueAsBytes(windowedAnalytic);
        clickCounts.toStream().foreach((k,c)->{
            String key = k.key();
            System.out.println(c);
+           producer.send(c);
             logService.writeLog(c);
 
 
