@@ -2,6 +2,48 @@ version: '3.8'
 
 services:
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    networks:
+      - app-net
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: echo srvr | nc zookeeper 2181 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    networks:
+      - app-net
+    ports:
+      - "9092:9092"
+      - "29092:29092"  # external access from host machine
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9092,OUTSIDE://localhost:29092
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: kafka-topics --bootstrap-server kafka:9092 --list || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   postgres:
     image: postgres:15
     container_name: postgres
@@ -10,17 +52,28 @@ services:
       POSTGRES_PASSWORD: pass
       POSTGRES_DB: url_shortener
     ports:
-        - "5431:5432"
+      - "5431:5432"
     networks:
-        - app-net
+      - app-net
+    healthcheck:
+      test: pg_isready -U postgres || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
     container_name: redis
     ports:
-        - "6379:6379"
+      - "6379:6379"
     networks:
-        - app-net
+      - app-net
+    healthcheck:
+      test: redis-cli ping || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   eureka-server:
     build:
       context: ./service_discovery
@@ -29,13 +82,16 @@ services:
     networks:
       - app-net
 
+
+
   api-gateway:
     build:
       context: ./api_gateway
     ports:
-      - "8080:8080"
+      - "8001:8001"
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_started
     environment:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
     networks:
@@ -48,25 +104,52 @@ services:
     ports:
       - "8085:8085"
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_started
     environment:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
     networks:
       - app-net
+
   shortener_service:
     build:
       context: ./shortner
-    deploy:
-      replicas: 50
     depends_on:
-      - eureka-server
-      - counter-service
-      - postgres
-      - redis
+      eureka-server:
+        condition: service_started
+      counter-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
       - SERVER_PORT=0
       - DB_URL=jdbc:postgresql://postgres:5432/url_shortener
+      - KAFKA_URL=kafka:9092
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_PRODUCER_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_CONSUMER_BOOTSTRAP_SERVERS=kafka:9092
+      - COUNTER_URL=http://counter-service:8085/get
+    networks:
+      - app-net
+
+  analytic_service:
+    build:
+      context: ./analytics_service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=MAIN_NHI_BATAUNGA
+      - KAFKA_URL=kafka:9092
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_PRODUCER_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_CONSUMER_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
 
     networks:
       - app-net

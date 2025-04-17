@@ -28,7 +28,7 @@ public class RedirectController {
       UserAgent u = userAgentAnalyzer.parse(request.getHeader("User-Agent"));
 
         try {
-
+            System.out.println("Hello URL request");
             URL url = urlService.fetchURL(short_code);
             kafkaProducer.produce("url-click-event", URLClickEventDTO.builder()
                             .short_url(url.getShortCode())
